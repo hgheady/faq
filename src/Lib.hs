@@ -2,20 +2,25 @@
 
 module Lib
   ( fePrint
+  , feFact'
   , feFact
   , feQuery
   , fePrintFact
-  , fePrintQuery
+  -- , fePrintQuery
   , fePrintTrie
   , fePrintChildren
   , fePrintNexts
-  , Fact (..)
-  , Query (..)
+  , iPred
+  , addNode'
+  , Input (..)
+  , QueryElement (..)
   , Node (..)
   ) where
 
 import Control.Monad
 import Data.Char
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.Maybe
 import Data.Text (Text, pack, unpack, splitOn)
 import qualified Data.Text as T
@@ -27,10 +32,10 @@ fePrint msg = putStrLn $ "---\n" <> unpack msg
 fePrintFact :: (Text, [Text]) -> IO [()]
 fePrintFact (p,ts) = mapM (putStr . show) $ p : ts
 
-fePrintQuery :: Query -> IO [()]
-fePrintQuery q = do
-  mapM (putStrLn . show) $ (qPred q) : []
-  mapM (putStrLn . show) $ qEls q
+-- fePrintQuery :: Query -> IO [()]
+-- fePrintQuery q = do
+--   mapM (putStrLn . show) $ (qPred q) : []
+--   mapM (putStrLn . show) $ qEls q
 
 fePrintChildren = fePrintList nChild "; child: "
 
@@ -52,38 +57,19 @@ fePrintTrie n = mapM (putStrLn . show) $ children n
       Just c  -> children c
       Nothing -> []
 
--- fePrintTrie :: Node -> Text
--- fePrintTrie n = T.intercalate "<PT>" $ map nc $ children n
---   where
---     nc :: Node -> Text
---     nc n = T.intercalate "<nc>" [fePrintNexts n, fePrintChildren n]
---     children :: Node -> [Node]
---     children n = n : case nChild n of
---       Just c  -> children c
---       Nothing -> []
-
--- data Fact = Fact
---   { fPredicate :: Text
---   , fTerms     :: [Text]
---   }
-
--- feFact :: Text -> Maybe Fact
--- feFact t = case T.splitOn " " t of
---   (pred : terms) -> Just $ Fact pred terms
---   _      -> Nothing
-
-feFact :: Text -> Maybe (Text, [Text])
-feFact t = case T.splitOn " " t of
+feFact' :: Text -> Maybe (Text, [Text])
+feFact' t = case T.splitOn " " t of
   (pred : terms) -> Just (pred, terms)
   _              -> Nothing
 
-data Node = Node
-  { nTerm  :: Text
-  , nNext  :: Maybe Node
-  , nChild :: Maybe Node
-  } deriving (Show)
+feFact :: Text -> Maybe Input
+feFact t = case T.splitOn " " t of
+  (pred : terms) -> Just Fact { fPred = pred
+                              , fTerms = terms
+                              }
+  _              -> Nothing
 
-feQuery :: Text -> Maybe Query
+feQuery :: Text -> Maybe Input
 feQuery t = case T.splitOn " " t of
   (pred : texts) -> case makeEls texts of
     Just es -> Just Query { qPred = pred
@@ -104,18 +90,47 @@ feQuery t = case T.splitOn " " t of
                       else Just $ Literal t
                  _ -> Just $ Literal t
 
-      -- Just (t, ($ case (length t) of
-      --                       1 -> if isUpper t then Variable else Literal
-      --                       _ -> Literal ))
+iPred :: Input -> Text
+iPred (Fact  p _) = p
+iPred (Query p _) = p
 
-data Fact = Fact
-  { fPred  :: Text
-  , fTerms :: [Text]
-  } deriving (Show)
-
-data Query = Query
-  { qPred :: Text
-  , qEls  :: [QueryElement]
-  } deriving (Show)
+data Input = Fact  { fPred  :: Text, fTerms :: [Text] }
+           | Query { qPred :: Text,  qEls  :: [QueryElement] } deriving (Show)
 
 data QueryElement = Literal Text | Variable Text deriving (Show)
+
+data Node = Node
+  { nTerm  :: Text
+  , nNext  :: Maybe Node
+  , nChild :: Maybe Node
+  } deriving (Show)
+
+addNode' :: (Map Text Node) -> Input -> (Map Text Node)
+addNode' m (Fact p ts) = case addNode'' (Map.lookup p m) ts of
+  Just n  -> Map.insert p n m
+  Nothing -> m
+addNode' m _           = m
+
+addNode'' :: Maybe Node -> [Text] -> Maybe Node
+addNode'' mn (t:ts) =
+  case mn of
+  Nothing -> Just Node { nTerm  = t
+                       , nNext  = Nothing
+                       , nChild = makeChildren ts
+                       }
+  Just n  ->
+    let child = nChild n
+        next  = nNext  n
+    in case (nTerm n == t) of
+      True  -> Just n { nChild = addNode'' child ts }
+      False -> Just n { nNext  = addNode'' next  [t]
+                      , nChild = addNode'' child ts
+                      }
+addNode'' _ [] = Nothing
+
+makeChildren :: [Text] -> Maybe Node
+makeChildren (t:ts) = Just Node { nTerm  = t
+                                , nNext  = Nothing
+                                , nChild = makeChildren ts
+                                }
+makeChildren [] = Nothing

@@ -15,38 +15,89 @@ main :: IO ()
 main = do
   ingested <- getContents
   let input = lines ingested
-  -- let input' = map parse input
-  let facts = map scrub $ filter isFact input
-  let queries = map scrub $ filter isQuery input
-  -- mapM print $ facts
-  -- mapM print $ queries
-  let feFacts   = map feFact facts
-  let feQueries = map feQuery queries
-  -- mapM fePrintFact $ map fromJust $ filter isJust feFacts
-  -- mapM fePrintQuery $ map fromJust $ filter isJust feQueries
-  mapM (putStrLn . show) $ map fromJust $ filter isJust feFacts
-  mapM (putStrLn . show) $ map fromJust $ filter isJust feQueries
-  let factTries = makeTries $ map fromJust $ filter isJust feFacts
-  case Map.lookup "are_friends" factTries of
-    -- Just n  -> (putStr . show) $ fePrintTrie n
-    Just n  -> fePrintTrie n
-    Nothing -> return [()]
-  fePrint "true"
+  let input' =  map fromJust $ filter isJust $ map (parse . scrub') input
+  -- mapM (putStrLn . show) input'
 
--- parse :: String -> Maybe Input
--- parse s = case splitAt 6 s of
---   ("INPUT ": s) -> 
+  -- let facts = map scrub $ filter isFact input
+  -- let queries = map scrub $ filter isQuery input
+  -- let feFacts   = map feFact' facts
+  -- let feQueries = map feQuery queries
+  -- mapM (putStrLn . show) $ map fromJust $ filter isJust feFacts
+  -- mapM (putStrLn . show) $ map fromJust $ filter isJust feQueries
+  -- let factTries = makeTries $ map fromJust $ filter isJust feFacts
 
--- data Input = Fact | Query
+  factEngine Map.empty input'
+  
+  -- case Map.lookup "are_friends" factTries of
+  --   Just n  -> fePrintTrie n
+  --   Nothing -> return [()]
+  fePrint "Fin"
 
-isFact :: String -> Bool
-isFact t = "INPUT " `isPrefixOf` t
+factEngine :: (Map Text Node) -> [Input] -> IO [()]
+factEngine m (i:is) = do
+    m' <- engine m (Map.lookup (iPred i) m) i
+    factEngine m' is
+  where
+    engine :: (Map Text Node) -> Maybe Node -> Input -> IO (Map Text Node)
+    engine m _ f@(Fact  _ _) = addFact  m f
+    engine m mn q@(Query _ _) = runQuery m mn q
+factEngine _ [] = do return [()]
 
-isQuery :: String -> Bool
-isQuery t = "QUERY " `isPrefixOf` t
+-- factEngine :: (Map Text Node) -> [Input] -> IO [()]
+-- factEngine m (i:is) = case Map.lookup (iPred i) m of
+--   Nothing -> case i of
+--     q@(Query _ _) -> engine m Nothing q >> factEngine m is
+--     f@(Fact  _ _) -> factEngine m is
+--   mn@(Just n)  -> do
+--     m' <- engine m mn i
+--     factEngine m' is
+--   where
+--     engine :: (Map Text Node) -> Maybe Node -> Input -> IO (Map Text Node)
+--     engine m _ f@(Fact  _ _) = addFact  m f
+--     engine m mn q@(Query _ _) = runQuery m mn q
+-- factEngine _ [] = do return [()]
 
-scrub :: String -> Text
-scrub s = pack $ filter syntax $ drop 6 s
+addFact :: (Map Text Node) -> Input -> IO (Map Text Node)
+addFact m f = do
+  return $ addNode' m f
+
+runQuery :: (Map Text Node) -> Maybe Node -> Input -> IO (Map Text Node)
+runQuery m mn (Query p els) = do
+  putStrLn "---"
+  case els of
+    []     -> return ()
+    (e:[]) -> case e of
+      (Literal  l) -> singleL mn l
+      (Variable v) -> case mn of
+        n@(Just _) -> singleV n v
+        Nothing    -> putStrLn "none"
+    (e:es) -> return ()
+  return m
+  where
+    singleL :: Maybe Node -> Text -> IO ()
+    singleL mn l = case mn of
+      Just n  -> case (nTerm n == l) of
+        True  -> putStrLn "true"
+        False -> singleL (nNext n) l
+      Nothing -> putStrLn "false"
+
+    singleV :: Maybe Node -> Text -> IO ()
+    singleV (Just n) v = do
+      putT (v <> ": " <> nTerm n)
+      singleV (nNext n) v
+    singleV Nothing _  = do return ()
+
+putT :: Text -> IO ()
+putT = (putStrLn . T.unpack)
+
+parse :: Text -> Maybe Input
+parse t = case T.splitAt 6 t of
+  ("INPUT ", t) -> feFact  t
+  ("QUERY ", t) -> feQuery t
+  (_       ,"") -> Nothing
+
+scrub' :: String -> Text
+scrub' s = pack $ filter syntax s
   where
     syntax :: Char -> Bool
     syntax c = (not . (`elem` ("()," :: [Char]))) c
@@ -82,3 +133,15 @@ makeTries facts = foldl addNode Map.empty facts
                                     , nChild = makeChildren ts
                                     }
     makeChildren [] = Nothing
+
+isFact :: String -> Bool
+isFact t = "INPUT " `isPrefixOf` t
+
+isQuery :: String -> Bool
+isQuery t = "QUERY " `isPrefixOf` t
+
+scrub :: String -> Text
+scrub s = pack $ filter syntax $ drop 6 s
+  where
+    syntax :: Char -> Bool
+    syntax c = (not . (`elem` ("()," :: [Char]))) c

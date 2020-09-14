@@ -40,12 +40,12 @@ runQuery mn q@(Query prd els mch bnd) =
       Literal l  -> if l == nTerm n
                     then run es  ts (nChild n)
                     else run els ts (nNext  n)
-      Variable v -> case run es ts (nChild n) of
+      Variable v -> case run es (v <> ": " <> (nTerm n)  : ts) (nChild n) of
         []  -> run els ts (nNext n)
-        ts' -> run els (v <> ": " <> (nTerm n)  : ts') (nNext n)
+        ts' -> run els ts' (nNext n)
     run ((Variable v):es) ts Nothing = ts
     run ((Literal  l):es) ts Nothing = []
-    run [] [] Nothing  = ["---"]
+    run [] [] Nothing  = ["true"]
     run [] ts Nothing  = ts
     run [] ts (Just _) = []
 

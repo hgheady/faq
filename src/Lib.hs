@@ -4,20 +4,26 @@ module Lib
   ( feFact
   , feQuery
   , iPred
-  , addNode
+  , addFact
   , Input (..)
   , QueryElement (..)
   , Node (..)
   ) where
 
-import Control.Monad
 import Data.Char
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
-import Data.Text (Text, pack, unpack, splitOn)
+import Data.Text (Text)
 import qualified Data.Text as T
 
+
+data Input = Fact  { fPred  :: Text, fTerms :: [Text] }
+           | Query { qPred  :: Text
+                   , qEls   :: [QueryElement]
+                   } deriving (Show)
+
+data QueryElement = Literal Text | Variable Text deriving (Show, Eq)
 
 feFact :: Text -> Maybe Input
 feFact t = case T.splitOn " " t of
@@ -50,12 +56,6 @@ iPred :: Input -> Text
 iPred (Fact  p _) = p
 iPred (Query p _) = p
 
-data Input = Fact  { fPred  :: Text, fTerms :: [Text] }
-           | Query { qPred  :: Text
-                   , qEls   :: [QueryElement]
-                   } deriving (Show)
-
-data QueryElement = Literal Text | Variable Text deriving (Show, Eq)
 
 data Node = Node
   { nTerm     :: Text
@@ -63,11 +63,11 @@ data Node = Node
   , nChild    :: Maybe Node
   } deriving (Show)
 
-addNode :: (Map Text Node) -> Input -> (Map Text Node)
-addNode m (Fact p ts) = case addNode' (Map.lookup p m) ts of
+addFact :: (Map Text Node) -> Input -> (Map Text Node)
+addFact m (Fact p ts) = case addNode' (Map.lookup p m) ts of
   Just n  -> Map.insert p n m
   Nothing -> m
-addNode m _           = m
+addFact m _           = m
 
 addNode' :: Maybe Node -> [Text] -> Maybe Node
 addNode' mn ts@(th:tt) =

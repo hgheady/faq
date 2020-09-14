@@ -14,56 +14,54 @@ import Lib
 main :: IO [()]
 main = do
   ingested <- getContents
-  let input = lines ingested
-  let input' =  map fromJust $ filter isJust $ map (parse . scrub) input
-  factEngine input' Map.empty
+  let input = map fromJust $ filter isJust $ map (parse . scrub) $ lines ingested
+  factEngine Map.empty input
 
-factEngine :: [Input] -> (Map Text Node) -> IO [()]
-factEngine (i@(Fact  _ _):is) m = factEngine is $ addFact m i
-factEngine (i@(Query _ _):is) m =
-  runQuery (Map.lookup (iPred i) m) i >> factEngine is m
-factEngine [] _ = return [()]
+factEngine :: (Map Text Node) -> [Input] -> IO [()]
+factEngine m (i@(Fact  _ _):is) = factEngine (addFact m i) is
+factEngine m (i@(Query _ _):is) = runQuery (Map.lookup (iPred i) m) i
+                                  >> factEngine m is
+factEngine _ []                 = return [()]
 
-addFact :: (Map Text Node) -> Input -> Map Text Node
-addFact m f = addNode m f
-
-                        --v Query predicate elements match bnd
 runQuery :: Maybe Node -> Input -> IO [()]
-runQuery mn q@(Query prd els) = mapM putT $ ["---"] <> reverse
-  (case run els [] Map.empty mn of
-     [] -> ["false"]
-     ts -> ts)
+runQuery mn q@(Query prd els) = mapM putT $ ["---"] <> (case run els [] Map.empty mn of
+                                                          [] -> ["false"]
+                                                          ts -> ts)
   where
     run :: [QueryElement] -> [Text] -> Map Text Text -> Maybe Node -> [Text]
-    run els@(e:es) ts bnd (Just n) = case e of
+    run els@(e:es) ts bound (Just n) = case e of
       Literal l  -> if l == nTerm n
-                    then run es  ts bnd (nChild n)
-                    else run els ts bnd (nNext  n)
+                    then run es  ts bound (nChild n)
+                    else run els ts bound (nNext  n)
                          
-      Variable v -> case Map.lookup v bnd of
-                      Just bound -> if bound /= nTerm n
-                                    then case nNext n of
-                                           n'@(Just _) -> run els ts bnd n'
-                                           Nothing     -> []
-                                    else case run es ts bnd (nChild n) of
-                                           []  -> run els ts bnd (nNext n)
-                                           ts' -> run els ts' bnd (nNext n)
-                      Nothing    -> let bnd' = Map.insert v (nTerm n) bnd
-                                        ts'  = (v <> ": " <> nTerm n) : ts
-                                    in case run es ts' bnd' (nChild n) of
-                                           []  -> run els ts  bnd (nNext n)
-                                           ts' -> run els ts' bnd (nNext n)
-    run ((Variable v):es) ts _ Nothing  = ts
-    run ((Literal  l):es) ts _ Nothing  = []
-    run []                [] _ Nothing  = ["true"]
-    run []                ts _ Nothing  = ts
-    run []                ts _ (Just _) = []
+      Variable v -> case Map.lookup v bound of
+        Just boundVal -> if boundVal == nTerm n
+                         then run els (run es ts bound (nChild n)) bound (nNext n)
+                         else if isJust $ nNext n
+                              then run els ts bound $ nNext n
+                              else []
+        Nothing       -> let bound' = Map.insert v (nTerm n) bound
+                         in case (valBound (nTerm n) bound) of
+                              Just (v', _) -> if v == v'
+                                              then case run es ts bound' (nChild n) of
+                                                     []  -> run els ts  bound (nNext n)
+                                                     ts' -> run els ts' bound (nNext n)
+                                              else []
+                              Nothing      -> case run es ts bound' (nChild n) of
+                                                []  -> run els ts  bound (nNext n)
+                                                ts' -> run els ts' bound (nNext n)
 
--- return with no bindings, not failed = 'true'
+    run (Literal  _:_) ts bound Nothing  = []
+    run (Variable _:_) ts bound Nothing  = ts
+    run []             ts bound Nothing  = let ts' = (map out (Map.toList bound))
+                                           in if (length ts' >= 1) then (ts' <> ts) else ["true"]
 
-putMT :: Maybe Text -> IO ()
-putMT (Just t) = putT t
-putMT Nothing  = return ()
+    valBound :: Text -> (Map Text Text) -> Maybe (Text, Text)
+    valBound val map = find isVal (Map.toList map)
+      where isVal (_, txt) = txt == val
+
+    out :: (Text, Text) -> Text
+    out (v, t) = v <> ": " <> t
 
 putT :: Text -> IO ()
 putT = (putStrLn . T.unpack)

@@ -1,8 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Lib
-  ( fePrint
-  , feFact
+  ( feFact
   , feQuery
   , iPred
   , addNode
@@ -20,9 +19,6 @@ import Data.Text (Text, pack, unpack, splitOn)
 import qualified Data.Text as T
 
 
-fePrint :: Text -> IO ()
-fePrint msg = putStrLn $ "---\n" <> unpack msg
-
 feFact :: Text -> Maybe Input
 feFact t = case T.splitOn " " t of
   (pred : terms) -> Just Fact { fPred = pred
@@ -35,8 +31,6 @@ feQuery t = case T.splitOn " " t of
   (pred : texts) -> case makeEls texts of
     Just es -> Just Query { qPred  = pred
                           , qEls   = es
-                          , qMatch = False
-                          , qBound = Map.empty
                           }
     Nothing -> Nothing
   where
@@ -53,14 +47,12 @@ feQuery t = case T.splitOn " " t of
                 else Just $ Literal t
 
 iPred :: Input -> Text
-iPred (Fact  p _    ) = p
-iPred (Query p _ _ _) = p
+iPred (Fact  p _) = p
+iPred (Query p _) = p
 
 data Input = Fact  { fPred  :: Text, fTerms :: [Text] }
            | Query { qPred  :: Text
                    , qEls   :: [QueryElement]
-                   , qMatch :: Bool
-                   , qBound :: Map Char (Maybe Text)
                    } deriving (Show)
 
 data QueryElement = Literal Text | Variable Text deriving (Show, Eq)

@@ -1,2 +1,3 @@
 INPUT is_a_cat (lucy)
 QUERY is_a_cat (lucy)
+QUERY is_a_cat (frodo)

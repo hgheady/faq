@@ -16,12 +16,11 @@ main = do
   ingested <- getContents
   let input = lines ingested
   let input' =  map fromJust $ filter isJust $ map (parse . scrub) input
-  -- mapM (putStrLn . show) input'
   factEngine input' Map.empty
 
 factEngine :: [Input] -> (Map Text Node) -> IO [()]
-factEngine (i@(Fact  _ _    ):is) m = factEngine is $ addFact m i
-factEngine (i@(Query _ _ _ _):is) m =
+factEngine (i@(Fact  _ _):is) m = factEngine is $ addFact m i
+factEngine (i@(Query _ _):is) m =
   runQuery (Map.lookup (iPred i) m) i >> factEngine is m
 factEngine [] _ = return [()]
 
@@ -30,10 +29,10 @@ addFact m f = addNode m f
 
                         --v Query predicate elements match bnd
 runQuery :: Maybe Node -> Input -> IO [()]
-runQuery mn q@(Query prd els mch bnd) =
-  mapM putT $ ["---"] <> reverse (case run els [] Map.empty mn of
-                                    [] -> ["false"]
-                                    ts -> ts)
+runQuery mn q@(Query prd els) = mapM putT $ ["---"] <> reverse
+  (case run els [] Map.empty mn of
+     [] -> ["false"]
+     ts -> ts)
   where
     run :: [QueryElement] -> [Text] -> Map Text Text -> Maybe Node -> [Text]
     run els@(e:es) ts bnd (Just n) = case e of

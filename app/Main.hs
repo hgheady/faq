@@ -31,23 +31,34 @@ addFact m f = addNode m f
                         --v Query predicate elements match bnd
 runQuery :: Maybe Node -> Input -> IO [()]
 runQuery mn q@(Query prd els mch bnd) =
-  mapM putT $ ["---"] <> case run els [] mn of
-                           [] -> ["false"]
-                           ts -> ts
+  mapM putT $ ["---"] <> reverse (case run els [] Map.empty mn of
+                                    [] -> ["false"]
+                                    ts -> ts)
   where
-    run :: [QueryElement] -> [Text] -> Maybe Node -> [Text]
-    run els@(e:es) ts (Just n) = case e of
+    run :: [QueryElement] -> [Text] -> Map Text Text -> Maybe Node -> [Text]
+    run els@(e:es) ts bnd (Just n) = case e of
       Literal l  -> if l == nTerm n
-                    then run es  ts (nChild n)
-                    else run els ts (nNext  n)
-      Variable v -> case run es (v <> ": " <> (nTerm n)  : ts) (nChild n) of
-        []  -> run els ts (nNext n)
-        ts' -> run els ts' (nNext n)
-    run ((Variable v):es) ts Nothing = ts
-    run ((Literal  l):es) ts Nothing = []
-    run [] [] Nothing  = ["true"]
-    run [] ts Nothing  = ts
-    run [] ts (Just _) = []
+                    then run es  ts bnd (nChild n)
+                    else run els ts bnd (nNext  n)
+                         
+      Variable v -> case Map.lookup v bnd of
+                      Just bound -> if bound /= nTerm n
+                                    then case nNext n of
+                                           n'@(Just _) -> run els ts bnd n'
+                                           Nothing     -> []
+                                    else case run es ts bnd (nChild n) of
+                                           []  -> run els ts bnd (nNext n)
+                                           ts' -> run els ts' bnd (nNext n)
+                      Nothing    -> let bnd' = Map.insert v (nTerm n) bnd
+                                        ts'  = (v <> ": " <> nTerm n) : ts
+                                    in case run es ts' bnd' (nChild n) of
+                                           []  -> run els ts  bnd (nNext n)
+                                           ts' -> run els ts' bnd (nNext n)
+    run ((Variable v):es) ts _ Nothing  = ts
+    run ((Literal  l):es) ts _ Nothing  = []
+    run []                [] _ Nothing  = ["true"]
+    run []                ts _ Nothing  = ts
+    run []                ts _ (Just _) = []
 
 -- return with no bindings, not failed = 'true'
 

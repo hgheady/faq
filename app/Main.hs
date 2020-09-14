@@ -17,59 +17,39 @@ main = do
   let input = lines ingested
   let input' =  map fromJust $ filter isJust $ map (parse . scrub) input
   -- mapM (putStrLn . show) input'
-  factEngine Map.empty input'
+  factEngine input' Map.empty
 
-factEngine :: (Map Text Node) -> [Input] -> IO [()]
-factEngine m (i:is) = do
-    m' <- engine m (Map.lookup (iPred i) m) i
-    factEngine m' is
+factEngine :: [Input] -> (Map Text Node) -> IO [()]
+factEngine (i@(Fact  _ _    ):is) m = factEngine is $ addFact m i
+factEngine (i@(Query _ _ _ _):is) m =
+  runQuery (Map.lookup (iPred i) m) i >> factEngine is m
+factEngine [] _ = return [()]
+
+addFact :: (Map Text Node) -> Input -> Map Text Node
+addFact m f = addNode m f
+
+                        --v Query predicate elements match bnd
+runQuery :: Maybe Node -> Input -> IO [()]
+runQuery mn q@(Query prd els mch bnd) =
+  mapM putT $ ["---"] <> case run els [] mn of
+                           [] -> ["false"]
+                           ts -> ts
   where
-    engine :: (Map Text Node) -> Maybe Node -> Input -> IO (Map Text Node)
-    engine m _  f@(Fact  _ _) = addFact  m f
-    engine m mn q@(Query _ _) = runQuery m mn q
-factEngine _ [] = return [()]
+    run :: [QueryElement] -> [Text] -> Maybe Node -> [Text]
+    run els@(e:es) ts (Just n) = case e of
+      Literal l  -> if l == nTerm n
+                    then run es  ts (nChild n)
+                    else run els ts (nNext  n)
+      Variable v -> case run es ts (nChild n) of
+        []  -> run els ts (nNext n)
+        ts' -> run els (v <> ": " <> (nTerm n)  : ts') (nNext n)
+    run ((Variable v):es) ts Nothing = ts
+    run ((Literal  l):es) ts Nothing = []
+    run [] [] Nothing  = ["---"]
+    run [] ts Nothing  = ts
+    run [] ts (Just _) = []
 
-addFact :: (Map Text Node) -> Input -> IO (Map Text Node)
-addFact m f = do return $ addNode m f
-
-runQuery :: (Map Text Node) -> Maybe Node -> Input -> IO (Map Text Node)
-runQuery m mn q@(Query p els) = do
-  putStrLn "---"
-  case els of
-    []     -> return ()
-    (e:[]) -> case e of
-      (Literal  l) -> putMT $ singleL mn l
-      (Variable v) -> case mn of
-        n@(Just _) -> putMT $ singleV n v
-        Nothing    -> putStrLn "none"
-    (e:es) -> putMT $ compound mn els Nothing
-  return m
-  where
-    compound :: Maybe Node -> [QueryElement] -> Maybe Text -> Maybe Text
-    compound mn ex@(e:es) mt = case e of
-      (Literal  l) -> case mn of
-        Just n  -> case nTerm n == l of
-          True  -> compound (nChild n) es mt
-          False -> compound (nNext  n) ex mt
-        Nothing -> Just "none"
-      (Variable v) -> case mn of
-        Just n  -> compound (nChild n) es $ case mt of
-          Just t  -> Just $ t <> ((v <> ": " <> nTerm n <> "\n"))
-          Nothing -> Just ((v <> ": " <> nTerm n <> "\n"))
-        Nothing -> mt
-    compound Nothing []  mt = mt
-
-    singleL :: Maybe Node -> Text -> Maybe Text
-    singleL mn l = case mn of
-      Just n  -> case (nTerm n == l) of
-        True  -> Just "true"
-        False -> singleL (nNext n) l
-      Nothing -> Just "false"
-
-    singleV :: Maybe Node -> Text -> Maybe Text
-    singleV (Just n) v = Just ((v <> ": " <> nTerm n <> "\n")
-      <> (fromMaybe "" $ singleV (nNext n) v))
-    singleV Nothing _  = Nothing
+-- return with no bindings, not failed = 'true'
 
 putMT :: Maybe Text -> IO ()
 putMT (Just t) = putT t

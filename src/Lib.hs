@@ -33,8 +33,10 @@ feFact t = case T.splitOn " " t of
 feQuery :: Text -> Maybe Input
 feQuery t = case T.splitOn " " t of
   (pred : texts) -> case makeEls texts of
-    Just es -> Just Query { qPred = pred
-                          , qEls  = es
+    Just es -> Just Query { qPred  = pred
+                          , qEls   = es
+                          , qMatch = False
+                          , qBound = Map.empty
                           }
     Nothing -> Nothing
   where
@@ -45,25 +47,28 @@ feQuery t = case T.splitOn " " t of
                       False -> Nothing
 
     makeEl :: Text -> Maybe QueryElement
-    makeEl t = case T.length t of
-                 1 -> if isUpper (T.head t)
-                      then Just $ Variable t
-                      else Just $ Literal t
-                 _ -> Just $ Literal t
+    makeEl "" = Nothing
+    makeEl t  = if isUpper (T.head t)
+                then Just $ Variable t
+                else Just $ Literal t
 
 iPred :: Input -> Text
-iPred (Fact  p _) = p
-iPred (Query p _) = p
+iPred (Fact  p _    ) = p
+iPred (Query p _ _ _) = p
 
 data Input = Fact  { fPred  :: Text, fTerms :: [Text] }
-           | Query { qPred :: Text,  qEls  :: [QueryElement] } deriving (Show)
+           | Query { qPred  :: Text
+                   , qEls   :: [QueryElement]
+                   , qMatch :: Bool
+                   , qBound :: Map Char (Maybe Text)
+                   } deriving (Show)
 
-data QueryElement = Literal Text | Variable Text deriving (Show)
+data QueryElement = Literal Text | Variable Text deriving (Show, Eq)
 
 data Node = Node
-  { nTerm  :: Text
-  , nNext  :: Maybe Node
-  , nChild :: Maybe Node
+  { nTerm     :: Text
+  , nNext     :: Maybe Node
+  , nChild    :: Maybe Node
   } deriving (Show)
 
 addNode :: (Map Text Node) -> Input -> (Map Text Node)
@@ -73,25 +78,16 @@ addNode m (Fact p ts) = case addNode' (Map.lookup p m) ts of
 addNode m _           = m
 
 addNode' :: Maybe Node -> [Text] -> Maybe Node
-addNode' mn (t:ts) =
+addNode' mn ts@(th:tt) =
   case mn of
-  Nothing -> Just Node { nTerm  = t
+  Nothing -> Just Node { nTerm  = th
                        , nNext  = Nothing
-                       , nChild = makeChildren ts
+                       , nChild = addNode' Nothing tt
                        }
   Just n  ->
-    let child = nChild n
-        next  = nNext  n
-    in case (nTerm n == t) of
-      True  -> Just n { nChild = addNode' child ts }
-      False -> Just n { nNext  = addNode' next  [t]
-                      , nChild = addNode' child ts
-                      }
+    let chld = nChild n
+        next = nNext  n
+    in case (nTerm n == th) of
+      True  -> Just n { nChild = addNode' chld tt }
+      False -> Just n { nNext  = addNode' next ts }
 addNode' _ [] = Nothing
-
-makeChildren :: [Text] -> Maybe Node
-makeChildren (t:ts) = Just Node { nTerm  = t
-                                , nNext  = Nothing
-                                , nChild = makeChildren ts
-                                }
-makeChildren [] = Nothing

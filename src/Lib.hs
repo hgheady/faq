@@ -27,18 +27,19 @@ data QueryElement = Literal Text | Variable Text deriving (Show, Eq)
 
 feFact :: Text -> Maybe Input
 feFact t = case T.splitOn " " t of
-  (pred : terms) -> Just Fact { fPred = pred
-                              , fTerms = terms
-                              }
-  _              -> Nothing
+  (predicate : terms) -> Just Fact { fPred = predicate
+                                   , fTerms = terms
+                                   }
+  _ -> Nothing
 
 feQuery :: Text -> Maybe Input
 feQuery t = case T.splitOn " " t of
-  (pred : texts) -> case makeEls texts of
-    Just es -> Just Query { qPred  = pred
+  (predicate : texts) -> case makeEls texts of
+    Just es -> Just Query { qPred  = predicate
                           , qEls   = es
                           }
     Nothing -> Nothing
+  _ -> Nothing
   where
     makeEls :: [Text] -> Maybe [QueryElement]
     makeEls ts = let qs = catMaybes $ map makeEl ts
@@ -48,9 +49,8 @@ feQuery t = case T.splitOn " " t of
 
     makeEl :: Text -> Maybe QueryElement
     makeEl "" = Nothing
-    makeEl t  = if isUpper (T.head t)
-                then Just $ Variable t
-                else Just $ Literal t
+    makeEl t' | isUpper (T.head t') && 1 == (T.length t') = Just $ Variable t'
+    makeEl t' = Just $ Literal t'
 
 iPred :: Input -> Text
 iPred (Fact  p _) = p
@@ -67,7 +67,7 @@ addFact :: (Map Text Node) -> Input -> (Map Text Node)
 addFact m (Fact p ts) = case addNode' (Map.lookup p m) ts of
   Just n  -> Map.insert p n m
   Nothing -> m
-addFact m _           = m
+addFact m _  = m
 
 addNode' :: Maybe Node -> [Text] -> Maybe Node
 addNode' mn ts@(th:tt) =

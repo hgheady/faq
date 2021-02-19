@@ -7,26 +7,26 @@ import qualified Data.Map as Map
 import Control.Monad
 import Data.List
 import Data.Maybe
-import Data.Text (Text, splitOn, pack)
+import Data.Text (Text)
 import qualified Data.Text as T
 import Lib
 
-main :: IO [()]
+main :: IO ()
 main = do
   ingested <- getContents
-  let input = map fromJust $ filter isJust $ map (parse . scrub) $ lines ingested
+  let input = map fromJust $ filter isJust $ map (parse . T.pack) $ lines ingested
   factEngine Map.empty input
 
-factEngine :: (Map Text Node) -> [Input] -> IO [()]
+factEngine :: (Map Text Node) -> [Input] -> IO ()
 factEngine m (i@(Fact  _ _):is) = factEngine (addFact m i) is
 factEngine m (i@(Query _ _):is) = runQuery (Map.lookup (iPred i) m) i
                                   >> factEngine m is
-factEngine _ []                 = return [()]
+factEngine _ []                 = return ()
 
-runQuery :: Maybe Node -> Input -> IO [()]
-runQuery mn q@(Query prd els) = mapM putT $ ["---"] <> (case run els [] Map.empty mn of
-                                                          [] -> ["false"]
-                                                          ts -> ts)
+runQuery :: Maybe Node -> Input -> IO ()
+runQuery mn q@(Query prd els) = mapM_ putT $ ["---"]
+  <> (case run els [] Map.empty mn of [] -> ["false"]
+                                      ts -> ts)
   where
     run :: [QueryElement] -> [Text] -> Map Text Text -> Maybe Node -> [Text]
     run els@(e:es) ts bound (Just n) = case e of
@@ -62,18 +62,3 @@ runQuery mn q@(Query prd els) = mapM putT $ ["---"] <> (case run els [] Map.empt
 
     out :: (Text, Text) -> Text
     out (v, t) = v <> ": " <> t
-
-putT :: Text -> IO ()
-putT = (putStrLn . T.unpack)
-
-parse :: Text -> Maybe Input
-parse t = case T.splitAt 6 t of
-  ("INPUT ", t) -> feFact  t
-  ("QUERY ", t) -> feQuery t
-  (_       ,"") -> Nothing
-
-scrub :: String -> Text
-scrub s = pack $ filter syntax s
-  where
-    syntax :: Char -> Bool
-    syntax c = (not . (`elem` ("()," :: [Char]))) c

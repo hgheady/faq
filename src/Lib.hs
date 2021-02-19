@@ -1,10 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Lib
-  ( feFact
-  , feQuery
+  ( faqFact
+  , faqQuery
   , iPred
   , addFact
+  , parse
+  , putT
+  , splitInput
   , Input (..)
   , QueryElement (..)
   , Node (..)
@@ -17,6 +20,14 @@ import Data.Maybe
 import Data.Text (Text)
 import qualified Data.Text as T
 
+parse :: Text -> Maybe Input
+parse t = case T.splitAt 5 t of
+  ("INPUT", t') -> faqFact t'
+  ("QUERY", t') -> faqQuery t'
+  (_      , _) -> Nothing
+
+putT :: Text -> IO ()
+putT = (putStrLn . T.unpack)
 
 data Input = Fact  { fPred  :: Text, fTerms :: [Text] }
            | Query { qPred  :: Text
@@ -25,15 +36,19 @@ data Input = Fact  { fPred  :: Text, fTerms :: [Text] }
 
 data QueryElement = Literal Text | Variable Text deriving (Show, Eq)
 
-feFact :: Text -> Maybe Input
-feFact t = case T.splitOn " " t of
+faqFact = faqFact' . splitInput
+faqQuery = faqQuery' . splitInput
+
+faqFact' :: [Text] -> Maybe Input
+faqFact' t = case t of
+  [] -> Nothing
+  (_:[]) -> Nothing
   (predicate : terms) -> Just Fact { fPred = predicate
                                    , fTerms = terms
                                    }
-  _ -> Nothing
 
-feQuery :: Text -> Maybe Input
-feQuery t = case T.splitOn " " t of
+faqQuery' :: [Text] -> Maybe Input
+faqQuery' t = case t of
   (predicate : texts) -> case makeEls texts of
     Just es -> Just Query { qPred  = predicate
                           , qEls   = es
@@ -51,6 +66,13 @@ feQuery t = case T.splitOn " " t of
     makeEl "" = Nothing
     makeEl t' | isUpper (T.head t') && 1 == (T.length t') = Just $ Variable t'
     makeEl t' = Just $ Literal t'
+
+
+-- TODO: should fold
+splitInput :: Text -> [Text]
+splitInput t = case T.split (`elem` ("()"::[Char])) $ T.filter (/= ' ') t of
+  [predicate, terms, _] -> predicate : T.splitOn "," terms
+  _ -> []
 
 iPred :: Input -> Text
 iPred (Fact  p _) = p
